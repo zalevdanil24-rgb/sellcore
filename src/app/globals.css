@@ -1,0 +1,80 @@
+/* Токены дизайн-системы SellCore (Signal × Baltic v1.0). Значения — только отсюда. */
+:root {
+  --accent: #2F6E7A;
+  --accent-hover: #285F69;
+  --accent-soft: #E1EEF0;
+  --on-accent: #FFFFFF;
+  --ink: #192B32;
+  --ink-muted: #5E6B70;
+  --surface: #FAF9F6;
+  --sidebar: #F2EEE7;
+  --card: #FFFFFF;
+  --line: #E3E0DA;
+  --disabled: #E8E6E1;
+  --on-disabled: #9A9F9F;
+  --success: #23856D;
+  --success-soft: #E3F1EC;
+  --warning-ink: #8A5A14;
+  --warning-soft: #FBEFD9;
+  --danger: #C94F4F;
+  --danger-soft: #F8E3E3;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --radius-sm: 8px; --radius-md: 12px; --radius-pill: 999px;
+  --font-sans: "Inter";
+  --font-display: "Manrope";
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 14px; line-height: 20px;
+  background: var(--surface); color: var(--ink);
+}
+h1, h2, .num { font-family: var(--font-display), system-ui, sans-serif; font-weight: 600; }
+h1 { font-size: 28px; line-height: 36px; margin: 0; }
+h2 { font-size: 20px; line-height: 28px; margin: 0 0 var(--space-3); }
+.muted { color: var(--ink-muted); }
+.num { font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+
+/* Оболочка */
+.shell { display: flex; min-height: 100vh; }
+.nav { width: 220px; flex: none; background: var(--sidebar); padding: var(--space-4) var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
+.nav-logo { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-display); font-weight: 700; font-size: 20px; padding: 0 var(--space-2) var(--space-4); color: var(--ink); text-decoration: none; }
+.nav-item { display: flex; align-items: center; gap: var(--space-3); height: 36px; padding: 0 var(--space-3); border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; }
+.nav-item svg { width: 18px; height: 18px; }
+.nav-item.active { background: var(--accent); color: var(--on-accent); }
+.nav-item:not(.active):hover { background: var(--line); }
+.nav-foot { margin-top: auto; padding: var(--space-3) var(--space-2) 0; border-top: 1px solid var(--line); }
+.main { flex: 1; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.topbar { display: flex; align-items: center; gap: var(--space-4); }
+.topbar .spacer { flex: 1; }
+
+/* Элементы */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-4) var(--space-5); }
+.grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.metric-label { color: var(--ink); }
+.metric-value { font-family: var(--font-display); font-weight: 600; font-size: 28px; line-height: 36px; }
+.btn { font: inherit; font-weight: 500; height: 40px; padding: 0 var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn:focus-visible, .input:focus { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+.input { font: inherit; height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); width: 100%; }
+.input:focus { border-color: var(--accent); }
+.field { display: flex; flex-direction: column; gap: var(--space-1); }
+.status { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 var(--space-3); border-radius: var(--radius-pill); font-weight: 600; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status-done { background: var(--success-soft); color: var(--success); }
+.status-wait { background: var(--warning-soft); color: var(--warning-ink); }
+.status-late { background: var(--danger-soft); color: var(--danger); }
+.table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.table th { background: var(--sidebar); text-align: left; font-weight: 600; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); }
+.table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.error { color: var(--danger); font-weight: 500; }
+
+/* Вход */
+.auth { min-height: 100vh; display: grid; place-items: center; padding: var(--space-5); }
+.auth .card { width: 100%; max-width: 380px; padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
