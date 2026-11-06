@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { TokenForm } from "./token-form";
+import { TokenCheck } from "./check";
 
 export default async function CabinetsPage() {
   const { cabinets, membership } = await requireUser();
@@ -26,6 +27,7 @@ export default async function CabinetsPage() {
           </tbody>
         </table>
       </div>
+      {canEdit && <TokenCheck />}
       <p className="muted" style={{ margin: 0 }}>
         Токен хранится только в зашифрованном виде. Его нельзя посмотреть после сохранения — только заменить или отключить.
       </p>
