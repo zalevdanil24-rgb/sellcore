@@ -24,6 +24,7 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts ./scripts
 # Модули для миграций целиком (сборщик Next берёт из них только то, что нужно сайту).
 COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+COPY --from=build /app/node_modules/bcryptjs ./node_modules/bcryptjs
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 # При старте применяем миграции базы, затем запускаем сайт.
