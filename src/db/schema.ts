@@ -103,4 +103,24 @@ export const syncRuns = pgTable(
   (t) => [index("sync_runs_cabinet_kind").on(t.cabinetId, t.kind, t.startedAt)],
 );
 
+// Приглашения сотрудников. Владелец создаёт ссылку, сотрудник по ней сам задаёт пароль.
+// Как и с восстановлением пароля, храним только отпечаток ссылки.
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: id(),
+    organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    role: role("role").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    invitedBy: text("invited_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("invitations_org").on(t.organizationId, t.createdAt)],
+);
+
 export type Cabinet = typeof cabinets.$inferSelect;

@@ -1,18 +1,13 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { resetMode } from "@/lib/password-reset";
+import { roleInfo } from "@/lib/roles";
+import { InviteForm } from "./invite-form";
+import { RemoveMember, RevokeInvite } from "./member-actions";
 import { ResetLink } from "./reset-link";
 
 export const dynamic = "force-dynamic";
-
-const roleLabel: Record<string, string> = {
-  OWNER: "Владелец",
-  MANAGER: "Менеджер",
-  LOGISTICS: "Логистика",
-  FINANCE: "Финансы",
-  VIEWER: "Просмотр",
-};
 
 const fmt = (d: Date) =>
   d.toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bishkek" });
@@ -37,9 +32,23 @@ export default async function TeamPage() {
     : [];
   const requestedAt = new Map(open.map((r) => [r.userId, r.at]));
 
+  // Приглашения, которые ещё не приняли (и не отменили, и не истекли).
+  const pending = isOwner
+    ? await db.query.invitations.findMany({
+        where: and(
+          eq(schema.invitations.organizationId, organization.id),
+          isNull(schema.invitations.acceptedAt),
+          isNull(schema.invitations.revokedAt),
+          gt(schema.invitations.expiresAt, new Date()),
+        ),
+        orderBy: [desc(schema.invitations.createdAt)],
+      })
+    : [];
+
   return (
     <>
       <div className="topbar"><h1>Сотрудники</h1></div>
+      {isOwner && <InviteForm />}
 
       {isOwner && open.length > 0 && (
         <div className="card" style={{ borderColor: "var(--warning-ink)", background: "var(--warning-soft)" }}>
@@ -52,7 +61,7 @@ export default async function TeamPage() {
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <table className="table">
-          <thead><tr><th>Сотрудник</th><th>Почта</th><th>Роль</th>{isOwner && <th>Пароль</th>}</tr></thead>
+          <thead><tr><th>Сотрудник</th><th>Почта</th><th>Роль</th>{isOwner && <th>Пароль</th>}{isOwner && <th></th>}</tr></thead>
           <tbody>
             {members.map((m) => {
               const at = requestedAt.get(m.id);
@@ -64,16 +73,40 @@ export default async function TeamPage() {
                     {at && <div className="error" style={{ fontSize: 13 }}>Забыл пароль · {fmt(at)}</div>}
                   </td>
                   <td>{m.email}</td>
-                  <td>{roleLabel[m.role] ?? m.role}</td>
+                  <td>{roleInfo[m.role].label}</td>
                   {isOwner && (
                     <td>{m.id === me.id && !at ? <span className="muted">—</span> : <ResetLink userId={m.id} name={m.name} requested={!!at} />}</td>
                   )}
+                  {isOwner && <td>{m.id !== me.id && <RemoveMember userId={m.id} name={m.name} />}</td>}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {pending.length > 0 && (
+        <>
+          <h3 style={{ margin: 0 }}>Ждут принятия приглашения</h3>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table className="table">
+              <thead><tr><th>Имя</th><th>Почта</th><th>Роль</th><th>Действует до</th><th></th></tr></thead>
+              <tbody>
+                {pending.map((i) => (
+                  <tr key={i.id}>
+                    <td style={{ fontWeight: 500 }}>{i.displayName}</td>
+                    <td>{i.email}</td>
+                    <td>{roleInfo[i.role].label}</td>
+                    <td>{fmt(i.expiresAt)}</td>
+                    <td><RevokeInvite id={i.id} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ margin: 0 }}>Ссылку приглашения нельзя посмотреть повторно. Если она потерялась — пригласите человека ещё раз, старая ссылка отключится.</p>
+        </>
+      )}
 
       {isOwner && resetMode() === "owner" && (
         <p className="muted" style={{ margin: 0 }}>
