@@ -10,7 +10,8 @@ function secret() {
   return new TextEncoder().encode(s);
 }
 
-export type Session = { userId: string };
+// issuedAt — когда выдан вход (секунды). Нужен, чтобы после смены пароля старые входы перестали работать.
+export type Session = { userId: string; issuedAt: number };
 
 export async function createSession(userId: string) {
   const token = await new SignJWT({ userId })
@@ -32,7 +33,7 @@ export async function readSession(): Promise<Session | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    return typeof payload.userId === "string" ? { userId: payload.userId } : null;
+    return typeof payload.userId === "string" ? { userId: payload.userId, issuedAt: payload.iat ?? 0 } : null;
   } catch {
     return null;
   }

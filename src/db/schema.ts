@@ -28,8 +28,25 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash").notNull(),
+  // Когда пароль меняли в последний раз. Все входы, сделанные раньше, становятся недействительными.
+  passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+// Одноразовые ссылки «Забыли пароль?». В базе храним только отпечаток (SHA-256) ссылки,
+// а саму ссылку знает только получатель письма: даже утечка базы не даст сбросить чужой пароль.
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("password_resets_user").on(t.userId, t.createdAt)],
+);
 
 export const memberships = pgTable(
   "memberships",

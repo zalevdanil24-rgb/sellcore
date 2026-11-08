@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // Полная проверка подписи — на сервере в requireUser().
 export function middleware(req: NextRequest) {
   const hasSession = req.cookies.has("sc_session");
-  const open = ["/login", "/setup", "/api/health"].some((p) => req.nextUrl.pathname.startsWith(p));
+  const open = ["/login", "/setup", "/forgot", "/reset", "/api/health"].some((p) => req.nextUrl.pathname.startsWith(p));
   if (!hasSession && !open) {
     return NextResponse.redirect(new URL("/login", req.url));
   }

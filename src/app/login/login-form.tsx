@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useActionState } from "react";
 import { Logo } from "@/components/icons";
 import { login } from "./actions";
@@ -25,6 +26,7 @@ export function LoginForm() {
         <button className="btn btn-primary" type="submit" disabled={pending} style={{ justifyContent: "center" }}>
           {pending ? "Входим…" : "Войти"}
         </button>
+        <Link href="/forgot" style={{ textAlign: "center" }}>Забыли пароль?</Link>
       </form>
     </main>
   );

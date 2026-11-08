@@ -9,6 +9,9 @@ export async function requireUser() {
   if (!session) redirect("/login");
 
   const user = await db.query.users.findFirst({ where: eq(schema.users.id, session.userId) });
+  // Пароль сменили после этого входа (например, через «Забыли пароль?») — вход больше не действует.
+  const changed = user?.passwordChangedAt;
+  if (changed && session.issuedAt < Math.floor(changed.getTime() / 1000)) redirect("/login");
   // Пока у пользователя одна организация; выбор между несколькими добавим на этапе 5.
   const membership = user
     ? await db.query.memberships.findFirst({ where: eq(schema.memberships.userId, user.id) })

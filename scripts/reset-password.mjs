@@ -23,7 +23,7 @@ try {
   } else {
     const user = rows[0];
     const password = randomBytes(12).toString("base64url");
-    await pool.query("update users set password_hash = $1 where id = $2", [await bcrypt.hash(password, 12), user.id]);
+    await pool.query("update users set password_hash = $1, password_changed_at = now() where id = $2", [await bcrypt.hash(password, 12), user.id]);
     console.log("");
     console.log(`Почта для входа: ${user.email}`);
     console.log(`Новый пароль:    ${password}`);
