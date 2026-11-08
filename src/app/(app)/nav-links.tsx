@@ -11,10 +11,12 @@ const items: { href: string; label: string; icon: IconName }[] = [
   { href: "/tasks", label: "Задачи", icon: "tasks" },
   { href: "/products", label: "Товары", icon: "box" },
   { href: "/finance", label: "Финансы", icon: "wallet" },
+  { href: "/team", label: "Сотрудники", icon: "users" },
   { href: "/settings", label: "Кабинеты", icon: "settings" },
 ];
 
-export function NavLinks() {
+// resetRequests — сколько сотрудников ждут ссылку для нового пароля (видит только владелец).
+export function NavLinks({ resetRequests = 0 }: { resetRequests?: number }) {
   const path = usePathname();
   return (
     <>
@@ -24,6 +26,9 @@ export function NavLinks() {
           <Link key={i.href} href={i.href} className={`nav-item${active ? " active" : ""}`}>
             <Icon name={i.icon} />
             {i.label}
+            {i.href === "/team" && resetRequests > 0 && (
+              <span className="nav-badge" title="Запросы на восстановление пароля">{resetRequests}</span>
+            )}
           </Link>
         );
       })}

@@ -48,6 +48,19 @@ export const passwordResets = pgTable(
   (t) => [index("password_resets_user").on(t.userId, t.createdAt)],
 );
 
+// Запросы «Забыли пароль?», пока на сайте не подключена отправка писем.
+// Владелец организации видит их в разделе «Сотрудники» и сам отправляет ссылку в мессенджер.
+export const passwordResetRequests = pgTable(
+  "password_reset_requests",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("password_reset_requests_open").on(t.userId, t.resolvedAt)],
+);
+
 export const memberships = pgTable(
   "memberships",
   {

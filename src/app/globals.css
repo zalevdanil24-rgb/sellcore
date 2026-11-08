@@ -47,6 +47,7 @@ a { color: var(--accent); }
 .nav-item svg { width: 18px; height: 18px; }
 .nav-item.active { background: var(--accent); color: var(--on-accent); }
 .nav-item:not(.active):hover { background: var(--line); }
+.nav-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
 .nav-foot { margin-top: auto; padding: var(--space-3) var(--space-2) 0; border-top: 1px solid var(--line); }
 .main { flex: 1; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
 .topbar { display: flex; align-items: center; gap: var(--space-4); }

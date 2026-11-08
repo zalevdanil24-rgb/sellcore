@@ -14,7 +14,14 @@ export default function ForgotPage() {
           <span className="num" style={{ fontSize: 24 }}>SellCore</span>
         </div>
         <h2 style={{ margin: 0 }}>Восстановление пароля</h2>
-        {state.sent ? (
+        {state.sent && state.mode === "owner" ? (
+          <>
+            <p style={{ margin: 0 }}>Запрос отправлен руководителю.</p>
+            <p className="muted" style={{ margin: 0 }}>
+              Он пришлёт вам ссылку для нового пароля в Telegram или WhatsApp. Если ссылки долго нет — напишите ему напрямую.
+            </p>
+          </>
+        ) : state.sent ? (
           <>
             <p style={{ margin: 0 }}>
               Если почта <b>{state.email}</b> зарегистрирована в SellCore, на неё пришло письмо со ссылкой. Ссылка действует 1 час.
@@ -23,14 +30,14 @@ export default function ForgotPage() {
           </>
         ) : (
           <>
-            <p className="muted" style={{ margin: 0 }}>Укажите почту, с которой входите. Пришлём ссылку, чтобы задать новый пароль.</p>
+            <p className="muted" style={{ margin: 0 }}>Укажите почту, с которой входите — пришлём ссылку, чтобы задать новый пароль.</p>
             <label className="field">
               Почта
               <input className="input" name="email" type="email" autoComplete="email" defaultValue={state.email} key={state.email} required />
             </label>
             {state.error && <p className="error" role="alert" style={{ margin: 0 }}>{state.error}</p>}
             <button className="btn btn-primary" type="submit" disabled={pending} style={{ justifyContent: "center" }}>
-              {pending ? "Отправляем…" : "Прислать ссылку"}
+              {pending ? "Отправляем…" : "Восстановить пароль"}
             </button>
           </>
         )}

@@ -1,8 +1,8 @@
 "use server";
 import { z } from "zod";
-import { requestReset } from "@/lib/password-reset";
+import { requestReset, resetMode, type ResetMode } from "@/lib/password-reset";
 
-type State = { sent: boolean; error: string; email: string };
+type State = { sent: boolean; error: string; email: string; mode?: ResetMode };
 
 export async function forgotPassword(_: State, data: FormData): Promise<State> {
   const email = String(data.get("email") ?? "").trim();
@@ -14,5 +14,5 @@ export async function forgotPassword(_: State, data: FormData): Promise<State> {
     console.error("Не удалось отправить письмо для восстановления пароля", e);
     return { sent: false, error: "Не получилось отправить письмо. Попробуйте ещё раз через пару минут.", email };
   }
-  return { sent: true, error: "", email };
+  return { sent: true, error: "", email, mode: resetMode() };
 }
