@@ -1,5 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, types } from "pg";
+
+// Большие целые (bigint) отдаём числами, а не строками: номера WB далеко до предела точности JS.
+types.setTypeParser(20, (v) => Number(v));
 import * as schema from "@/db/schema";
 
 // Одно подключение к базе на всё приложение (в режиме разработки Next перезагружает модули).

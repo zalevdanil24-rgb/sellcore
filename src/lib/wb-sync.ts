@@ -52,7 +52,7 @@ async function syncCabinet(cabinetId: string, token: string) {
       `insert into wb_products (cabinet_id, nm_id, imt_id, vendor_code, brand, subject, title, photo_url, barcodes, card_updated_at, updated_at)
        select $1, x.nm_id, x.imt_id, x.vendor_code, x.brand, x.subject, x.title, x.photo_url,
               array(select jsonb_array_elements_text(x.barcodes)), x.card_updated_at, now()
-       from jsonb_to_recordset($2::jsonb) as x(nm_id int, imt_id int, vendor_code text, brand text, subject text, title text, photo_url text, barcodes jsonb, card_updated_at timestamptz)
+       from jsonb_to_recordset($2::jsonb) as x(nm_id bigint, imt_id bigint, vendor_code text, brand text, subject text, title text, photo_url text, barcodes jsonb, card_updated_at timestamptz)
        on conflict (cabinet_id, nm_id) do update set imt_id = excluded.imt_id, vendor_code = excluded.vendor_code, brand = excluded.brand,
          subject = excluded.subject, title = excluded.title, photo_url = excluded.photo_url, barcodes = excluded.barcodes,
          card_updated_at = excluded.card_updated_at, updated_at = now()`,
@@ -62,7 +62,7 @@ async function syncCabinet(cabinetId: string, token: string) {
         barcodes: (c.sizes ?? []).flatMap((s) => s.skus ?? []), card_updated_at: c.updatedAt ?? null,
       })))]);
     // Карточки, которых больше нет в кабинете, убираем.
-    await pool.query(`delete from wb_products where cabinet_id = $1 and nm_id <> all($2::int[])`, [cabinetId, cards.map((c) => c.nmID)]);
+    await pool.query(`delete from wb_products where cabinet_id = $1 and nm_id <> all($2::bigint[])`, [cabinetId, cards.map((c) => c.nmID)]);
     return `${cards.length} карточек`;
   });
 
@@ -75,7 +75,7 @@ async function syncCabinet(cabinetId: string, token: string) {
     }));
     await pool.query(
       `update wb_products p set price = x.price, discounted_price = x.discounted
-       from jsonb_to_recordset($2::jsonb) as x(nm_id int, price real, discounted real)
+       from jsonb_to_recordset($2::jsonb) as x(nm_id bigint, price real, discounted real)
        where p.cabinet_id = $1 and p.nm_id = x.nm_id`, [cabinetId, JSON.stringify(rows)]);
     return `${rows.length} цен`;
   });
@@ -86,7 +86,7 @@ async function syncCabinet(cabinetId: string, token: string) {
       await pool.query(
         `insert into wb_orders (cabinet_id, srid, day, ordered_at, last_change_at, nm_id, tech_size, warehouse_type, price_with_disc, finished_price, spp, is_cancel, cancel_day)
          select $1, x.srid, x.day, x.ordered_at, x.last_change_at, x.nm_id, x.tech_size, x.warehouse_type, x.price_with_disc, x.finished_price, x.spp, x.is_cancel, x.cancel_day
-         from jsonb_to_recordset($2::jsonb) as x(srid text, day date, ordered_at timestamp, last_change_at timestamp, nm_id int, tech_size text, warehouse_type text, price_with_disc real, finished_price real, spp real, is_cancel boolean, cancel_day date)
+         from jsonb_to_recordset($2::jsonb) as x(srid text, day date, ordered_at timestamp, last_change_at timestamp, nm_id bigint, tech_size text, warehouse_type text, price_with_disc real, finished_price real, spp real, is_cancel boolean, cancel_day date)
          on conflict (cabinet_id, srid) do update set last_change_at = excluded.last_change_at, price_with_disc = excluded.price_with_disc,
            finished_price = excluded.finished_price, spp = excluded.spp, is_cancel = excluded.is_cancel, cancel_day = excluded.cancel_day`,
         [cabinetId, JSON.stringify(rows.slice(i, i + 5000).map((o) => ({
@@ -104,7 +104,7 @@ async function syncCabinet(cabinetId: string, token: string) {
       await pool.query(
         `insert into wb_sales (cabinet_id, sale_id, srid, day, sold_at, last_change_at, nm_id, tech_size, price_with_disc, for_pay, is_return)
          select $1, x.sale_id, x.srid, x.day, x.sold_at, x.last_change_at, x.nm_id, x.tech_size, x.price_with_disc, x.for_pay, x.is_return
-         from jsonb_to_recordset($2::jsonb) as x(sale_id text, srid text, day date, sold_at timestamp, last_change_at timestamp, nm_id int, tech_size text, price_with_disc real, for_pay real, is_return boolean)
+         from jsonb_to_recordset($2::jsonb) as x(sale_id text, srid text, day date, sold_at timestamp, last_change_at timestamp, nm_id bigint, tech_size text, price_with_disc real, for_pay real, is_return boolean)
          on conflict (cabinet_id, sale_id) do update set last_change_at = excluded.last_change_at, price_with_disc = excluded.price_with_disc, for_pay = excluded.for_pay`,
         [cabinetId, JSON.stringify(rows.slice(i, i + 5000).map((s) => ({
           sale_id: s.saleID, srid: s.srid ?? "", day: day(s.date), sold_at: s.date, last_change_at: s.lastChangeDate, nm_id: s.nmId,
@@ -126,11 +126,11 @@ async function syncCabinet(cabinetId: string, token: string) {
     const rows = [...byNm].map(([nm_id, a]) => ({ nm_id, ...a }));
     await pool.query(
       `insert into wb_stocks (cabinet_id, nm_id, fbo, to_client, from_client, updated_at)
-       select $1, x.nm_id, x.fbo, x."to", x."from", now() from jsonb_to_recordset($2::jsonb) as x(nm_id int, fbo int, "to" int, "from" int)
+       select $1, x.nm_id, x.fbo, x."to", x."from", now() from jsonb_to_recordset($2::jsonb) as x(nm_id bigint, fbo int, "to" int, "from" int)
        on conflict (cabinet_id, nm_id) do update set fbo = excluded.fbo, to_client = excluded.to_client, from_client = excluded.from_client, updated_at = now()`,
       [cabinetId, JSON.stringify(rows)]);
     // Товара нет в ответе WB — значит, на складах WB его сейчас нет.
-    await pool.query(`update wb_stocks set fbo = 0, to_client = 0, from_client = 0, updated_at = now() where cabinet_id = $1 and nm_id <> all($2::int[])`,
+    await pool.query(`update wb_stocks set fbo = 0, to_client = 0, from_client = 0, updated_at = now() where cabinet_id = $1 and nm_id <> all($2::bigint[])`,
       [cabinetId, rows.map((r) => r.nm_id)]);
     return `${rows.length} артикулов`;
   });
@@ -141,7 +141,7 @@ async function syncCabinet(cabinetId: string, token: string) {
     const rows = products.map((p) => ({ nm_id: p.nmId, fbs: p.barcodes.reduce((sum, b) => sum + (amounts.get(b) ?? 0), 0) }));
     await pool.query(
       `insert into wb_stocks (cabinet_id, nm_id, fbs, updated_at)
-       select $1, x.nm_id, x.fbs, now() from jsonb_to_recordset($2::jsonb) as x(nm_id int, fbs int)
+       select $1, x.nm_id, x.fbs, now() from jsonb_to_recordset($2::jsonb) as x(nm_id bigint, fbs int)
        on conflict (cabinet_id, nm_id) do update set fbs = excluded.fbs`, [cabinetId, JSON.stringify(rows)]);
     return `${rows.filter((r) => r.fbs > 0).length} артикулов с остатком`;
   });

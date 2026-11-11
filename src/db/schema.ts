@@ -3,7 +3,7 @@
 // кабинеты маркетплейса (наши: ИП Кузнецова и ОсОО Антарион) и сотрудники с ролями.
 // Данные одной организации никогда не видны другой.
 import { createId } from "@paralleldrive/cuid2";
-import { boolean, date, index, integer, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const id = () => text("id").primaryKey().$defaultFn(() => createId());
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
@@ -125,14 +125,15 @@ export const invitations = pgTable(
 
 // ───── Данные WB для раздела «Продажи» ─────
 // Всё привязано к кабинету. nmId — артикул WB (число в адресе карточки).
+// Номера WB храним как bigint: они уже перевалили за 2 млрд и не влезают в обычное целое.
 
 // Карточки товаров (из раздела API «Контент») и текущая цена (раздел «Цены и скидки»).
 export const wbProducts = pgTable(
   "wb_products",
   {
     cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
-    nmId: integer("nm_id").notNull(),
-    imtId: integer("imt_id"), // общий номер склейки карточек
+    nmId: bigint("nm_id", { mode: "number" }).notNull(),
+    imtId: bigint("imt_id", { mode: "number" }), // общий номер склейки карточек
     vendorCode: text("vendor_code").notNull(), // артикул продавца
     brand: text("brand").default("").notNull(),
     subject: text("subject").default("").notNull(), // категория (предмет)
@@ -156,7 +157,7 @@ export const wbOrders = pgTable(
     day: date("day").notNull(),
     orderedAt: timestamp("ordered_at").notNull(), // московское время, как отдаёт WB
     lastChangeAt: timestamp("last_change_at").notNull(),
-    nmId: integer("nm_id").notNull(),
+    nmId: bigint("nm_id", { mode: "number" }).notNull(),
     techSize: text("tech_size").default("").notNull(),
     warehouseType: text("warehouse_type").default("").notNull(), // «Склад WB» / «Склад продавца»
     priceWithDisc: real("price_with_disc").default(0).notNull(), // цена со скидкой продавца
@@ -182,7 +183,7 @@ export const wbSales = pgTable(
     day: date("day").notNull(),
     soldAt: timestamp("sold_at").notNull(),
     lastChangeAt: timestamp("last_change_at").notNull(),
-    nmId: integer("nm_id").notNull(),
+    nmId: bigint("nm_id", { mode: "number" }).notNull(),
     techSize: text("tech_size").default("").notNull(),
     priceWithDisc: real("price_with_disc").default(0).notNull(),
     forPay: real("for_pay").default(0).notNull(), // к перечислению продавцу
@@ -199,7 +200,7 @@ export const wbStocks = pgTable(
   "wb_stocks",
   {
     cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
-    nmId: integer("nm_id").notNull(),
+    nmId: bigint("nm_id", { mode: "number" }).notNull(),
     fbo: integer("fbo").default(0).notNull(), // на складах WB
     fbs: integer("fbs"), // на складах продавца; пусто = у токена нет доступа к разделу «Маркетплейс»
     toClient: integer("to_client").default(0).notNull(), // в пути к клиенту
