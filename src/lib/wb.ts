@@ -232,6 +232,12 @@ async function fetchWarehouseRemains(token: string): Promise<WbStock[]> {
     if (i === 19) throw new WbError(null, "отчёт об остатках не успел построиться");
   }
   const rows = await wbFetch<RemainsRow[]>("analytics", `/api/v1/warehouse_remains/tasks/${id}/download`, token);
+  // Разбивка отчёта по «складам» — чтобы видеть в журнале, какие строки WB туда кладёт.
+  const byName = new Map<string, number>();
+  for (const r of Array.isArray(rows) ? rows : []) for (const w of r.warehouses ?? []) byName.set(w.warehouseName, (byName.get(w.warehouseName) ?? 0) + w.quantity);
+  syncLog(`[wb] остатки по складам: ${[...byName].map(([n, q]) => `${n}=${q}`).join("; ")}`);
+  const sample = (Array.isArray(rows) ? rows : []).find((r) => r.nmId === 217896205);
+  if (sample) syncLog(`[wb] пример 217896205: ${JSON.stringify(sample).slice(0, 600)}`);
   return (Array.isArray(rows) ? rows : []).map((r) => {
     let total: number | null = null, toClient = 0, fromClient = 0, sumWh = 0;
     for (const w of r.warehouses ?? []) {
