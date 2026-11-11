@@ -238,16 +238,25 @@ async function fetchWarehouseRemains(token: string): Promise<WbStock[]> {
   syncLog(`[wb] остатки по складам: ${[...byName].map(([n, q]) => `${n}=${q}`).join("; ")}`);
   const sample = (Array.isArray(rows) ? rows : []).find((r) => r.nmId === 217896205);
   if (sample) syncLog(`[wb] пример 217896205: ${JSON.stringify(sample).slice(0, 600)}`);
+  // В отчёте для России есть строка «Склад WB РФ» — остаток, доступный к продаже, как в новом методе WB.
+  // Рядом идут отдельные российские склады (Тула, Коледино…) с другими цифрами — их не складываем.
+  // Склады в других странах (Казахстан, Беларусь, Армения…) отдельной сводной строки не имеют — их прибавляем.
+  const FOREIGN = /ереван|yerevan|армени|великий камень|минск|беларус|астана|алматы|атакент|актобе|караганд|шымкент|казахстан|ташкент|узбек|бишкек|кыргыз|тбилиси|грузи/i;
   return (Array.isArray(rows) ? rows : []).map((r) => {
-    let total: number | null = null, toClient = 0, fromClient = 0, sumWh = 0;
+    let total: number | null = null, russia: number | null = null, foreign = 0, toClient = 0, fromClient = 0, sumWh = 0;
     for (const w of r.warehouses ?? []) {
       const name = w.warehouseName.toLowerCase();
       if (name.startsWith("в пути до получател")) toClient += w.quantity;
       else if (name.startsWith("в пути возврат")) fromClient += w.quantity;
       else if (name.startsWith("всего")) total = w.quantity;
-      else sumWh += w.quantity;
+      else if (name === "склад wb рф") russia = w.quantity;
+      else {
+        sumWh += w.quantity;
+        if (FOREIGN.test(name)) foreign += w.quantity;
+      }
     }
-    return { nmId: r.nmId, quantity: total ?? sumWh, inWayToClient: toClient, inWayFromClient: fromClient };
+    const quantity = russia !== null ? russia + foreign : total ?? sumWh;
+    return { nmId: r.nmId, quantity, inWayToClient: toClient, inWayFromClient: fromClient };
   });
 }
 
