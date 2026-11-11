@@ -51,14 +51,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Один запрос к WB. Если WB отвечает «слишком часто» (429), ждём и пробуем ещё раз.
 // WB_API_MOCK — адрес подставного сервера для проверки на своём компьютере.
-async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: string, body?: unknown): Promise<T> {
+async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: string, body?: unknown, method?: "GET" | "POST"): Promise<T> {
   const mock = process.env.WB_API_MOCK;
   const url = mock ? `${mock}/${section}${path}` : `https://${HOSTS[section]}${path}`;
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
       res = await fetch(url, {
-        method: body === undefined ? "GET" : "POST",
+        method: method ?? (body === undefined ? "GET" : "POST"),
         headers: { Authorization: token, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(90_000),
@@ -153,8 +153,19 @@ export const fetchOrders = (token: string, dateFrom: string) => fetchChanged<WbO
 export const fetchSales = (token: string, dateFrom: string) => fetchChanged<WbSale>("sales", token, dateFrom);
 
 // Остатки на складах WB и товары в пути — строка на каждый размер на каждом складе.
-// Старый метод /api/v1/supplier/stocks WB отключил 23.06.2026, это его замена (раздел «Аналитика»).
+// Старый метод /api/v1/supplier/stocks WB отключил 23.06.2026. Основная замена — stocks-report/wb-warehouses,
+// но он работает не со всеми типами токенов (403). Тогда берём отчёт warehouse_remains:
+// заказываем отчёт, ждём готовности и скачиваем.
 export async function fetchStocks(token: string): Promise<WbStock[]> {
+  try {
+    return await fetchStocksReport(token);
+  } catch (e) {
+    if (e instanceof WbError && (e.status === 403 || e.status === 401)) return fetchWarehouseRemains(token);
+    throw e;
+  }
+}
+
+async function fetchStocksReport(token: string): Promise<WbStock[]> {
   const all: WbStock[] = [];
   const limit = 250_000;
   for (let offset = 0; offset < 5_000_000; offset += limit) {
@@ -166,6 +177,41 @@ export async function fetchStocks(token: string): Promise<WbStock[]> {
     await sleep(20_000); // лимит WB: 1 запрос в 20 секунд
   }
   return all;
+}
+
+type RemainsRow = { nmId: number; warehouses?: { warehouseName: string; quantity: number }[] };
+
+async function fetchWarehouseRemains(token: string): Promise<WbStock[]> {
+  const path = "/api/v1/warehouse_remains?groupByNm=true";
+  type Task = { data?: { taskId?: string } };
+  // В разных версиях документации отчёт заказывается то GET, то POST — пробуем оба.
+  const task = await wbFetch<Task>("analytics", path, token, undefined, "GET").catch((e) => {
+    if (e instanceof WbError && (e.status === 405 || e.status === 404)) return wbFetch<Task>("analytics", path, token, {}, "POST");
+    throw e;
+  });
+  const id = task?.data?.taskId;
+  if (!id) throw new WbError(null, "WB не выдал номер отчёта об остатках");
+  // Отчёт строится от нескольких секунд до пары минут. Статус можно спрашивать раз в 5 секунд.
+  for (let i = 0; i < 60; i++) {
+    await sleep(process.env.WB_API_MOCK ? 50 : 6_000);
+    const st = await wbFetch<{ data?: { status?: string } }>("analytics", `/api/v1/warehouse_remains/tasks/${id}/status`, token);
+    const status = st?.data?.status;
+    if (status === "done") break;
+    if (status === "canceled" || status === "purged") throw new WbError(null, `отчёт об остатках: ${status}`);
+    if (i === 59) throw new WbError(null, "отчёт об остатках не успел построиться");
+  }
+  const rows = await wbFetch<RemainsRow[]>("analytics", `/api/v1/warehouse_remains/tasks/${id}/download`, token);
+  return (Array.isArray(rows) ? rows : []).map((r) => {
+    let total: number | null = null, toClient = 0, fromClient = 0, sumWh = 0;
+    for (const w of r.warehouses ?? []) {
+      const name = w.warehouseName.toLowerCase();
+      if (name.startsWith("в пути до получател")) toClient += w.quantity;
+      else if (name.startsWith("в пути возврат")) fromClient += w.quantity;
+      else if (name.startsWith("всего")) total = w.quantity;
+      else sumWh += w.quantity;
+    }
+    return { nmId: r.nmId, quantity: total ?? sumWh, inWayToClient: toClient, inWayFromClient: fromClient };
+  });
 }
 
 // Остатки на складах продавца (FBS): по штрихкодам, для каждого склада продавца.
