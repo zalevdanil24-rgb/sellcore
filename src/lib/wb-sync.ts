@@ -168,7 +168,10 @@ export async function syncStatus(cabinetId: string): Promise<SyncStatus> {
   return { running, lastFinishedAt: ok.length ? new Date(Math.max(...ok)).toISOString() : null, steps };
 }
 
-const inFlight = new Set<string>();
+// Какие кабинеты загружаются прямо сейчас. Храним на globalThis: Next собирает страницу и кнопку
+// в разные модули, и обычная переменная у каждого была бы своя.
+const g = globalThis as unknown as { wbSyncInFlight?: Set<string> };
+const inFlight = (g.wbSyncInFlight ??= new Set<string>());
 
 // Запускает загрузку в фоне и сразу возвращает управление. force = по кнопке «Обновить»;
 // без него — только если данные старше 30 минут.
