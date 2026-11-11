@@ -54,6 +54,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: string, body?: unknown, method?: "GET" | "POST"): Promise<T> {
   const mock = process.env.WB_API_MOCK;
   const url = mock ? `${mock}/${section}${path}` : `https://${HOSTS[section]}${path}`;
+  let last429 = "";
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
@@ -70,6 +71,7 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
     }
     // Лимиты WB считаются на весь аккаунт продавца, поэтому 429 бывает и из-за других сервисов
     // с тем же кабинетом. Ждём столько, сколько просит WB (но не меньше обычного окна раздела) и пробуем снова.
+    if (res.status === 429) last429 = `${(await res.clone().text().catch(() => "")).slice(0, 160)} · retry=${res.headers.get("x-ratelimit-retry") ?? "?"} remaining=${res.headers.get("x-ratelimit-remaining") ?? "?"}`;
     if (res.status === 429 && attempt < 5) {
       const asked = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0) || 0;
       await sleep(mock ? 100 : Math.min(Math.max(asked, WAIT_429[section]), 90) * 1000);
@@ -79,7 +81,7 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
       const text = (await res.text().catch(() => "")).slice(0, 200);
       const why =
         res.status === 401 ? "у токена нет доступа к этому разделу" :
-        res.status === 429 ? "WB 5 раз ответил «слишком частые запросы» — лимит аккаунта занят, возможно, другим сервисом. Попробуйте позже" :
+        res.status === 429 ? `WB 5 раз ответил «слишком частые запросы» — лимит аккаунта занят, возможно, другим сервисом. Попробуйте позже. Ответ WB: ${last429}` :
         `код ${res.status}${text ? `: ${text}` : ""}`;
       throw new WbError(res.status, why);
     }
