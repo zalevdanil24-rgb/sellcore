@@ -42,6 +42,13 @@ const HOSTS = {
 // Сколько секунд по умолчанию ждать после ответа «слишком часто» в каждом разделе.
 const WAIT_429: Record<keyof typeof HOSTS, number> = { content: 5, statistics: 61, analytics: 21, prices: 7, marketplace: 5 };
 
+// Если WB велел подождать, не трогаем этот раздел до указанного времени: каждый запрос раньше срока
+// только продлевает блокировку. Ключ — раздел + конец токена (лимиты у каждого аккаунта свои).
+const gb = globalThis as unknown as { wbBlockedUntil?: Map<string, number> };
+const blockedUntil = (gb.wbBlockedUntil ??= new Map<string, number>());
+const blockKey = (section: string, token: string) => `${section}:${token.slice(-12)}`;
+const minutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
+
 export class WbError extends Error {
   constructor(public status: number | null, message: string) {
     super(message);
@@ -55,7 +62,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: string, body?: unknown, method?: "GET" | "POST"): Promise<T> {
   const mock = process.env.WB_API_MOCK;
   const url = mock ? `${mock}/${section}${path}` : `https://${HOSTS[section]}${path}`;
-  let last429 = "";
+  const key = blockKey(section, token);
+  const until = blockedUntil.get(key) ?? 0;
+  if (!mock && until > Date.now()) {
+    throw new WbError(429, `WB ограничил частоту запросов — повторим через ${minutes(until - Date.now())} мин`);
+  }
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     const t0 = Date.now();
@@ -76,17 +87,21 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
     // с тем же кабинетом. Ждём столько, сколько просит WB (но не меньше обычного окна раздела) и пробуем снова.
     syncLog(`[wb] ${section} ${path.split("?")[0]} → ${res.status} за ${Date.now() - t0} мс, попытка ${attempt + 1}` +
       (res.status === 429 ? `, retry=${res.headers.get("x-ratelimit-retry") ?? "?"} remaining=${res.headers.get("x-ratelimit-remaining") ?? "?"} reset=${res.headers.get("x-ratelimit-reset") ?? "?"}` : ""));
-    if (res.status === 429) last429 = `${(await res.clone().text().catch(() => "")).slice(0, 160)} · retry=${res.headers.get("x-ratelimit-retry") ?? "?"} remaining=${res.headers.get("x-ratelimit-remaining") ?? "?"}`;
-    if (res.status === 429 && attempt < 5) {
+    if (res.status === 429) {
       const asked = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0) || 0;
-      await sleep(mock ? 100 : Math.min(Math.max(asked, WAIT_429[section]), 90) * 1000);
+      // Долгая блокировка — не ждём внутри загрузки, а запоминаем срок и выходим.
+      if (asked > 120 || attempt >= 3) {
+        const wait = Math.max(asked, WAIT_429[section]) * 1000;
+        blockedUntil.set(key, Date.now() + wait);
+        throw new WbError(429, `WB ограничил частоту запросов — повторим через ${minutes(wait)} мин`);
+      }
+      await sleep(mock ? 100 : (Math.max(asked, WAIT_429[section]) + 1) * 1000);
       continue;
     }
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200);
       const why =
         res.status === 401 ? "у токена нет доступа к этому разделу" :
-        res.status === 429 ? `WB 5 раз ответил «слишком частые запросы» — лимит аккаунта занят, возможно, другим сервисом. Попробуйте позже. Ответ WB: ${last429}` :
         `код ${res.status}${text ? `: ${text}` : ""}`;
       throw new WbError(res.status, why);
     }
