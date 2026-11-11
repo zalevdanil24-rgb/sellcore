@@ -10,4 +10,6 @@ const pool = g.pool ?? new Pool({ connectionString: process.env.DATABASE_URL, ma
 if (process.env.NODE_ENV !== "production") g.pool = pool;
 
 export const db = drizzle(pool, { schema });
+// Прямое подключение — для массовой загрузки данных WB, где нужен обычный SQL.
+export { pool };
 export { schema };

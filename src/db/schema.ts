@@ -3,7 +3,7 @@
 // кабинеты маркетплейса (наши: ИП Кузнецова и ОсОО Антарион) и сотрудники с ролями.
 // Данные одной организации никогда не видны другой.
 import { createId } from "@paralleldrive/cuid2";
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const id = () => text("id").primaryKey().$defaultFn(() => createId());
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
@@ -121,6 +121,92 @@ export const invitations = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("invitations_org").on(t.organizationId, t.createdAt)],
+);
+
+// ───── Данные WB для раздела «Продажи» ─────
+// Всё привязано к кабинету. nmId — артикул WB (число в адресе карточки).
+
+// Карточки товаров (из раздела API «Контент») и текущая цена (раздел «Цены и скидки»).
+export const wbProducts = pgTable(
+  "wb_products",
+  {
+    cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
+    nmId: integer("nm_id").notNull(),
+    imtId: integer("imt_id"), // общий номер склейки карточек
+    vendorCode: text("vendor_code").notNull(), // артикул продавца
+    brand: text("brand").default("").notNull(),
+    subject: text("subject").default("").notNull(), // категория (предмет)
+    title: text("title").default("").notNull(),
+    photoUrl: text("photo_url"),
+    barcodes: text("barcodes").array().default([]).notNull(),
+    cardUpdatedAt: timestamp("card_updated_at", { withTimezone: true }),
+    price: real("price"), // цена до скидки продавца
+    discountedPrice: real("discounted_price"), // цена со скидкой продавца (без СПП)
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cabinetId, t.nmId] })],
+);
+
+// Заказы: одна строка = одна единица товара. day — дата заказа по Москве (так считает WB).
+export const wbOrders = pgTable(
+  "wb_orders",
+  {
+    cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
+    srid: text("srid").notNull(), // уникальный номер заказа
+    day: date("day").notNull(),
+    orderedAt: timestamp("ordered_at").notNull(), // московское время, как отдаёт WB
+    lastChangeAt: timestamp("last_change_at").notNull(),
+    nmId: integer("nm_id").notNull(),
+    techSize: text("tech_size").default("").notNull(),
+    warehouseType: text("warehouse_type").default("").notNull(), // «Склад WB» / «Склад продавца»
+    priceWithDisc: real("price_with_disc").default(0).notNull(), // цена со скидкой продавца
+    finishedPrice: real("finished_price").default(0).notNull(), // цена для покупателя (с СПП)
+    spp: real("spp").default(0).notNull(),
+    isCancel: boolean("is_cancel").default(false).notNull(),
+    cancelDay: date("cancel_day"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.cabinetId, t.srid] }),
+    index("wb_orders_day").on(t.cabinetId, t.day, t.nmId),
+    index("wb_orders_cancel").on(t.cabinetId, t.cancelDay),
+  ],
+);
+
+// Продажи (выкупы) и возвраты: одна строка = одна единица. Возврат — isReturn = true.
+export const wbSales = pgTable(
+  "wb_sales",
+  {
+    cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
+    saleId: text("sale_id").notNull(), // S… продажа, R… возврат
+    srid: text("srid").default("").notNull(),
+    day: date("day").notNull(),
+    soldAt: timestamp("sold_at").notNull(),
+    lastChangeAt: timestamp("last_change_at").notNull(),
+    nmId: integer("nm_id").notNull(),
+    techSize: text("tech_size").default("").notNull(),
+    priceWithDisc: real("price_with_disc").default(0).notNull(),
+    forPay: real("for_pay").default(0).notNull(), // к перечислению продавцу
+    isReturn: boolean("is_return").default(false).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.cabinetId, t.saleId] }),
+    index("wb_sales_day").on(t.cabinetId, t.day, t.nmId),
+  ],
+);
+
+// Текущие остатки по артикулу. История не хранится — WB отдаёт только «сейчас».
+export const wbStocks = pgTable(
+  "wb_stocks",
+  {
+    cabinetId: text("cabinet_id").notNull().references(() => cabinets.id, { onDelete: "cascade" }),
+    nmId: integer("nm_id").notNull(),
+    fbo: integer("fbo").default(0).notNull(), // на складах WB
+    fbs: integer("fbs"), // на складах продавца; пусто = у токена нет доступа к разделу «Маркетплейс»
+    toClient: integer("to_client").default(0).notNull(), // в пути к клиенту
+    fromClient: integer("from_client").default(0).notNull(), // в пути от клиента
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cabinetId, t.nmId] })],
 );
 
 export type Cabinet = typeof cabinets.$inferSelect;

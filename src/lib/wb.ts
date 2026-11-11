@@ -28,3 +28,138 @@ export async function pingAll(token: string): Promise<PingResult[]> {
     }),
   );
 }
+
+// ───── Запросы данных ─────
+const HOSTS = {
+  content: "content-api.wildberries.ru",
+  statistics: "statistics-api.wildberries.ru",
+  prices: "discounts-prices-api.wildberries.ru",
+  marketplace: "marketplace-api.wildberries.ru",
+} as const;
+
+export class WbError extends Error {
+  constructor(public status: number | null, message: string) {
+    super(message);
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Один запрос к WB. Если WB отвечает «слишком часто» (429), ждём и пробуем ещё раз.
+// WB_API_MOCK — адрес подставного сервера для проверки на своём компьютере.
+async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: string, body?: unknown): Promise<T> {
+  const mock = process.env.WB_API_MOCK;
+  const url = mock ? `${mock}/${section}${path}` : `https://${HOSTS[section]}${path}`;
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { Authorization: token, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(90_000),
+        cache: "no-store",
+      });
+    } catch {
+      if (attempt < 2) { await sleep(3_000); continue; }
+      throw new WbError(null, "WB не отвечает");
+    }
+    if (res.status === 429 && attempt < 3) {
+      const retry = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0);
+      await sleep(Math.min(Math.max(retry, mock ? 0.1 : 20), 65) * 1000);
+      continue;
+    }
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 200);
+      const why =
+        res.status === 401 ? "у токена нет доступа к этому разделу" :
+        res.status === 429 ? "слишком частые запросы, попробуйте через минуту" :
+        `код ${res.status}${text ? `: ${text}` : ""}`;
+      throw new WbError(res.status, why);
+    }
+    return (await res.json()) as T;
+  }
+}
+
+export type WbCard = {
+  nmID: number; imtID?: number; vendorCode: string; brand?: string; subjectName?: string; title?: string;
+  photos?: { tm?: string; c246x328?: string; square?: string; big?: string }[];
+  sizes?: { techSize?: string; skus?: string[] }[];
+  updatedAt?: string;
+};
+
+// Все карточки кабинета, по 100 штук за запрос.
+export async function fetchCards(token: string): Promise<WbCard[]> {
+  const all: WbCard[] = [];
+  let cursor: Record<string, unknown> = { limit: 100 };
+  for (let page = 0; page < 500; page++) {
+    const res = await wbFetch<{ cards?: WbCard[]; cursor?: { updatedAt?: string; nmID?: number; total?: number } }>(
+      "content", "/content/v2/get/cards/list", token, { settings: { cursor, filter: { withPhoto: -1 } } });
+    const cards = res.cards ?? [];
+    all.push(...cards);
+    if (cards.length < 100 || !res.cursor?.updatedAt) break;
+    cursor = { limit: 100, updatedAt: res.cursor.updatedAt, nmID: res.cursor.nmID };
+  }
+  return all;
+}
+
+export type WbPrice = { nmID: number; sizes?: { price?: number; discountedPrice?: number }[] };
+
+export async function fetchPrices(token: string): Promise<WbPrice[]> {
+  const all: WbPrice[] = [];
+  for (let offset = 0; offset < 200_000; offset += 1000) {
+    const res = await wbFetch<{ data?: { listGoods?: WbPrice[] } }>(
+      "prices", `/api/v2/list/goods/filter?limit=1000&offset=${offset}`, token);
+    const goods = res.data?.listGoods ?? [];
+    all.push(...goods);
+    if (goods.length < 1000) break;
+  }
+  return all;
+}
+
+export type WbOrder = {
+  date: string; lastChangeDate: string; nmId: number; techSize?: string; warehouseType?: string;
+  priceWithDisc?: number; finishedPrice?: number; spp?: number; isCancel?: boolean; cancelDate?: string; srid: string;
+};
+export type WbSale = {
+  date: string; lastChangeDate: string; nmId: number; techSize?: string;
+  priceWithDisc?: number; forPay?: number; saleID: string; srid?: string;
+};
+export type WbStock = { nmId: number; quantity?: number; inWayToClient?: number; inWayFromClient?: number };
+
+// Заказы / продажи, изменившиеся с момента dateFrom (московское время). WB отдаёт до ~80 000 строк
+// за раз; если пришло много — запрашиваем продолжение с даты последней строки (не чаще раза в минуту).
+async function fetchChanged<T extends { lastChangeDate: string }>(kind: "orders" | "sales", token: string, dateFrom: string): Promise<T[]> {
+  const all: T[] = [];
+  let from = dateFrom;
+  for (let page = 0; page < 20; page++) {
+    const rows = await wbFetch<T[]>("statistics", `/api/v1/supplier/${kind}?dateFrom=${encodeURIComponent(from)}&flag=0`, token);
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    all.push(...rows);
+    if (rows.length < 50_000) break;
+    from = rows[rows.length - 1].lastChangeDate;
+  }
+  return all;
+}
+export const fetchOrders = (token: string, dateFrom: string) => fetchChanged<WbOrder>("orders", token, dateFrom);
+export const fetchSales = (token: string, dateFrom: string) => fetchChanged<WbSale>("sales", token, dateFrom);
+
+// Остатки на складах WB и товары в пути — строка на каждый склад и размер.
+export async function fetchStocks(token: string): Promise<WbStock[]> {
+  const rows = await wbFetch<WbStock[]>("statistics", "/api/v1/supplier/stocks?dateFrom=2019-06-20", token);
+  return Array.isArray(rows) ? rows : [];
+}
+
+// Остатки на складах продавца (FBS): по штрихкодам, для каждого склада продавца.
+export async function fetchFbsStocks(token: string, barcodes: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  const warehouses = await wbFetch<{ id: number }[]>("marketplace", "/api/v3/warehouses", token);
+  for (const w of Array.isArray(warehouses) ? warehouses : []) {
+    for (let i = 0; i < barcodes.length; i += 1000) {
+      const res = await wbFetch<{ stocks?: { sku: string; amount: number }[] }>(
+        "marketplace", `/api/v3/stocks/${w.id}`, token, { skus: barcodes.slice(i, i + 1000) });
+      for (const s of res.stocks ?? []) result.set(s.sku, (result.get(s.sku) ?? 0) + (s.amount ?? 0));
+    }
+  }
+  return result;
+}

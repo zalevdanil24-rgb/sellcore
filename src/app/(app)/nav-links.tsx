@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icons";
 // Разделы появятся по этапу 3; пока ссылки ведут на заглушки.
 const items: { href: string; label: string; icon: IconName }[] = [
   { href: "/", label: "Обзор", icon: "home" },
+  { href: "/sales", label: "Продажи", icon: "trend" },
   { href: "/ads", label: "РнП реклама", icon: "chart" },
   { href: "/supplies", label: "Поставки FBO", icon: "truck" },
   { href: "/tasks", label: "Задачи", icon: "tasks" },
