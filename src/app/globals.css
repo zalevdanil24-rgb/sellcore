@@ -162,3 +162,6 @@ a { color: var(--accent); }
 .sd-table td.sd-alert { background: var(--danger); color: #fff; font-weight: 600; }
 .sd-table tbody tr:hover td:not([style]):not(.sd-alert) { background: var(--surface); }
 .sd-foot { margin: 0; font-size: 12px; }
+
+.sd-log summary { cursor: pointer; font-weight: 500; }
+.sd-log pre { margin: 8px 0 0; font-size: 12px; line-height: 16px; white-space: pre-wrap; color: var(--ink-muted); max-height: 320px; overflow: auto; }

@@ -3,11 +3,12 @@ import { requireUser } from "@/lib/auth";
 import { loadSales } from "@/lib/sales-data";
 import { startSync, syncStatus } from "@/lib/wb-sync";
 import { SalesDashboard } from "./dashboard";
+import { syncLogLines } from "@/lib/sync-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ cabinet?: string }> }) {
-  const { cabinets } = await requireUser();
+  const { cabinets, membership } = await requireUser();
   const wanted = (await searchParams).cabinet;
   const cabinet = cabinets.find((c) => c.id === wanted) ?? cabinets.find((c) => c.apiTokenEnc) ?? cabinets[0];
 
@@ -43,6 +44,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     <>
       <div className="topbar"><h1>Продажи</h1>{tabs}</div>
       <SalesDashboard key={cabinet.id} cabinetId={cabinet.id} data={data} status={status} />
+      {membership.role === "OWNER" && (
+        <details className="card sd-log">
+          <summary>Журнал загрузки из WB</summary>
+          <pre>{syncLogLines().join("\n") || "Пока пусто — журнал ведётся с последнего перезапуска сайта."}</pre>
+        </details>
+      )}
     </>
   );
 }
