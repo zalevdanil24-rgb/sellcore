@@ -25,6 +25,8 @@ async function step(cabinetId: string, kind: string, run: () => Promise<string>)
   const [row] = await db.insert(schema.syncRuns).values({ cabinetId, kind, status: "running" }).returning();
   let status = "ok";
   let message: string;
+  const t0 = Date.now();
+  console.log(`[sync] ${cabinetId} ${kind} — старт`);
   try {
     message = await run();
   } catch (e) {
@@ -32,6 +34,7 @@ async function step(cabinetId: string, kind: string, run: () => Promise<string>)
     message = e instanceof WbError ? e.message : e instanceof Error ? e.message.slice(0, 300) : "Неизвестная ошибка";
     if (!(e instanceof WbError)) console.error(`sync ${kind}`, e);
   }
+  console.log(`[sync] ${cabinetId} ${kind} — ${status} за ${Math.round((Date.now() - t0) / 1000)} с: ${message}`);
   await db.update(schema.syncRuns).set({ status, message, finishedAt: new Date() }).where(eq(schema.syncRuns.id, row.id));
 }
 

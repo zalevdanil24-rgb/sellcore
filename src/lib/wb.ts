@@ -57,6 +57,7 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
   let last429 = "";
   for (let attempt = 0; ; attempt++) {
     let res: Response;
+    const t0 = Date.now();
     try {
       res = await fetch(url, {
         method: method ?? (body === undefined ? "GET" : "POST"),
@@ -65,12 +66,15 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
         signal: AbortSignal.timeout(90_000),
         cache: "no-store",
       });
-    } catch {
+    } catch (e) {
+      console.log(`[wb] ${section} ${path.split("?")[0]} — нет ответа за ${Date.now() - t0} мс (${e instanceof Error ? e.name : "?"}), попытка ${attempt + 1}`);
       if (attempt < 2) { await sleep(3_000); continue; }
       throw new WbError(null, "WB не отвечает");
     }
     // Лимиты WB считаются на весь аккаунт продавца, поэтому 429 бывает и из-за других сервисов
     // с тем же кабинетом. Ждём столько, сколько просит WB (но не меньше обычного окна раздела) и пробуем снова.
+    console.log(`[wb] ${section} ${path.split("?")[0]} → ${res.status} за ${Date.now() - t0} мс, попытка ${attempt + 1}` +
+      (res.status === 429 ? `, retry=${res.headers.get("x-ratelimit-retry") ?? "?"} remaining=${res.headers.get("x-ratelimit-remaining") ?? "?"} reset=${res.headers.get("x-ratelimit-reset") ?? "?"}` : ""));
     if (res.status === 429) last429 = `${(await res.clone().text().catch(() => "")).slice(0, 160)} · retry=${res.headers.get("x-ratelimit-retry") ?? "?"} remaining=${res.headers.get("x-ratelimit-remaining") ?? "?"}`;
     if (res.status === 429 && attempt < 5) {
       const asked = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0) || 0;
