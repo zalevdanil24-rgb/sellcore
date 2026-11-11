@@ -17,7 +17,6 @@ export const SYNC_STEPS = [
 const KINDS = SYNC_STEPS.map((s) => s.kind) as string[];
 
 const STALE_MS = 30 * 60 * 1000; // WB сам обновляет данные раз в 30 минут
-const RUNNING_MS = 15 * 60 * 1000; // если загрузка «висит» дольше — считаем её оборванной
 
 const day = (s: string | undefined) => (s && s.length >= 10 && !s.startsWith("0001") ? s.slice(0, 10) : null);
 const dedupe = <T,>(rows: T[], key: (r: T) => string) => [...new Map(rows.map((r) => [key(r), r])).values()];
@@ -163,7 +162,8 @@ export async function syncStatus(cabinetId: string): Promise<SyncStatus> {
     const last = runs.find((r) => r.kind === s.kind && r.status !== "running");
     return { kind: s.kind, label: s.label, status: last?.status ?? null, message: last?.message ?? null, finishedAt: last?.finishedAt?.toISOString() ?? null };
   });
-  const running = inFlight.has(cabinetId) || runs.some((r) => r.status === "running" && Date.now() - r.startedAt.getTime() < RUNNING_MS);
+  // Сайт работает в одном экземпляре, поэтому «идёт загрузка» знаем точно только из памяти процесса.
+  const running = inFlight.has(cabinetId);
   const ok = runs.filter((r) => r.status === "ok" && r.finishedAt).map((r) => r.finishedAt!.getTime());
   return { running, lastFinishedAt: ok.length ? new Date(Math.max(...ok)).toISOString() : null, steps };
 }
@@ -176,10 +176,12 @@ export async function startSync(cabinetId: string, force = false): Promise<"star
   const cabinet = await db.query.cabinets.findFirst({ where: eq(schema.cabinets.id, cabinetId) });
   if (!cabinet?.apiTokenEnc) return "no-token";
   if (inFlight.has(cabinetId)) return "running";
+  // Загрузки, оборванные перезапуском сайта (например, при выкатке), помечаем прерванными.
+  await db.update(schema.syncRuns).set({ status: "error", message: "прервано перезапуском сайта", finishedAt: new Date() })
+    .where(and(eq(schema.syncRuns.cabinetId, cabinetId), eq(schema.syncRuns.status, "running")));
   const recent = await db.query.syncRuns.findMany({
     where: and(eq(schema.syncRuns.cabinetId, cabinetId), inArray(schema.syncRuns.kind, KINDS), gt(schema.syncRuns.startedAt, new Date(Date.now() - STALE_MS))),
   });
-  if (recent.some((r) => r.status === "running" && Date.now() - r.startedAt.getTime() < RUNNING_MS)) return "running";
   // Не чаще раза в минуту даже по кнопке: у WB лимит — один запрос отчёта в минуту.
   const lastStart = Math.max(0, ...recent.map((r) => r.startedAt.getTime()));
   if (!force && recent.length > 0) return "fresh";
