@@ -279,7 +279,7 @@ export function SalesDashboard({ cabinetId, data, status }: { cabinetId: string;
         </div>
         <span className="spacer" />
         <span className="muted sd-updated">
-          {status.running ? "Загружаем данные WB…" : updated ? `Обновлено ${updated} МСК` : "Данные ещё не загружались"}
+          {status.running ? `Загружаем данные WB${status.current ? `: ${status.current.toLowerCase()}` : ""}…` : updated ? `Обновлено ${updated} МСК` : "Данные ещё не загружались"}
         </span>
         <button className="btn" type="button" onClick={refresh} disabled={pending || status.running}><Icon name="refresh" />Обновить</button>
       </div>

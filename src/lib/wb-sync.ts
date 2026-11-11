@@ -148,6 +148,7 @@ async function syncCabinet(cabinetId: string, token: string) {
 
 export type SyncStatus = {
   running: boolean;
+  current: string | null; // какой шаг загружается сейчас
   lastFinishedAt: string | null; // когда последний раз что-то успешно загрузилось
   steps: { kind: string; label: string; status: string | null; message: string | null; finishedAt: string | null }[];
 };
@@ -164,8 +165,10 @@ export async function syncStatus(cabinetId: string): Promise<SyncStatus> {
   });
   // Сайт работает в одном экземпляре, поэтому «идёт загрузка» знаем точно только из памяти процесса.
   const running = inFlight.has(cabinetId);
+  const now = running ? runs.find((r) => r.status === "running") : undefined;
+  const current = now ? SYNC_STEPS.find((s) => s.kind === now.kind)?.label ?? null : null;
   const ok = runs.filter((r) => r.status === "ok" && r.finishedAt).map((r) => r.finishedAt!.getTime());
-  return { running, lastFinishedAt: ok.length ? new Date(Math.max(...ok)).toISOString() : null, steps };
+  return { running, current, lastFinishedAt: ok.length ? new Date(Math.max(...ok)).toISOString() : null, steps };
 }
 
 // Какие кабинеты загружаются прямо сейчас. Храним на globalThis: Next собирает страницу и кнопку

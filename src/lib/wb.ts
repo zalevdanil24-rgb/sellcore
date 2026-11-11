@@ -38,6 +38,9 @@ const HOSTS = {
   marketplace: "marketplace-api.wildberries.ru",
 } as const;
 
+// Сколько секунд по умолчанию ждать после ответа «слишком часто» в каждом разделе.
+const WAIT_429: Record<keyof typeof HOSTS, number> = { content: 5, statistics: 61, analytics: 21, prices: 7, marketplace: 5 };
+
 export class WbError extends Error {
   constructor(public status: number | null, message: string) {
     super(message);
@@ -65,16 +68,18 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
       if (attempt < 2) { await sleep(3_000); continue; }
       throw new WbError(null, "WB не отвечает");
     }
-    if (res.status === 429 && attempt < 3) {
-      const retry = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0);
-      await sleep(Math.min(Math.max(retry, mock ? 0.1 : 20), 65) * 1000);
+    // Лимиты WB считаются на весь аккаунт продавца, поэтому 429 бывает и из-за других сервисов
+    // с тем же кабинетом. Ждём столько, сколько просит WB (но не меньше обычного окна раздела) и пробуем снова.
+    if (res.status === 429 && attempt < 5) {
+      const asked = Number(res.headers.get("x-ratelimit-retry") ?? res.headers.get("retry-after") ?? 0) || 0;
+      await sleep(mock ? 100 : Math.min(Math.max(asked, WAIT_429[section]), 90) * 1000);
       continue;
     }
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200);
       const why =
         res.status === 401 ? "у токена нет доступа к этому разделу" :
-        res.status === 429 ? "слишком частые запросы, попробуйте через минуту" :
+        res.status === 429 ? "WB 5 раз ответил «слишком частые запросы» — лимит аккаунта занят, возможно, другим сервисом. Попробуйте позже" :
         `код ${res.status}${text ? `: ${text}` : ""}`;
       throw new WbError(res.status, why);
     }
