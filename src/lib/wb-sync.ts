@@ -23,6 +23,8 @@ const day = (s: string | undefined) => (s && s.length >= 10 && !s.startsWith("00
 const dedupe = <T,>(rows: T[], key: (r: T) => string) => [...new Map(rows.map((r) => [key(r), r])).values()];
 
 async function step(cabinetId: string, kind: string, run: () => Promise<string>) {
+  // Каждый раздел WB — не чаще раза в 30 минут, даже по кнопке: лимиты кабинета общие со всеми сервисами.
+  if (!process.env.WB_API_MOCK && (await recentlyOk(cabinetId, kind))) return;
   const [row] = await db.insert(schema.syncRuns).values({ cabinetId, kind, status: "running" }).returning();
   let status = "ok";
   let message: string;
@@ -47,8 +49,8 @@ async function changedSince(table: "wb_orders" | "wb_sales", cabinetId: string):
   return rows[0].d as string;
 }
 
-// Отчёты «Статистики» (заказы, продажи) WB режет строже, чем пишет в документации, и наказывает
-// долгой блокировкой всего кабинета. Поэтому обращаемся к ним не чаще раза в 30 минут — даже по кнопке.
+// WB режет запросы строже, чем пишет в документации, и наказывает долгой блокировкой кабинета.
+// Поэтому к каждому разделу обращаемся не чаще раза в 30 минут — даже по кнопке.
 const STATISTICS_EVERY_MS = 30 * 60 * 1000;
 async function recentlyOk(cabinetId: string, kind: string): Promise<boolean> {
   const last = await db.query.syncRuns.findFirst({
@@ -94,10 +96,7 @@ async function syncCabinet(cabinetId: string, token: string) {
     return `${rows.length} цен`;
   });
 
-  const skipOrders = !process.env.WB_API_MOCK && (await recentlyOk(cabinetId, "orders"));
-  const skipSales = !process.env.WB_API_MOCK && (await recentlyOk(cabinetId, "sales"));
-
-  if (!skipOrders) await step(cabinetId, "orders", async () => {
+  await step(cabinetId, "orders", async () => {
     const rows = dedupe(await fetchOrders(token, await changedSince("wb_orders", cabinetId)), (o) => o.srid).filter((o) => o.srid && day(o.date));
     for (let i = 0; i < rows.length; i += 5000) {
       await pool.query(
@@ -115,7 +114,7 @@ async function syncCabinet(cabinetId: string, token: string) {
     return `${rows.length} строк`;
   });
 
-  if (!skipSales) await step(cabinetId, "sales", async () => {
+  await step(cabinetId, "sales", async () => {
     const rows = dedupe(await fetchSales(token, await changedSince("wb_sales", cabinetId)), (s) => s.saleID).filter((s) => s.saleID && day(s.date));
     for (let i = 0; i < rows.length; i += 5000) {
       await pool.query(
