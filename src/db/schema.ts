@@ -210,4 +210,11 @@ export const wbStocks = pgTable(
   (t) => [primaryKey({ columns: [t.cabinetId, t.nmId] })],
 );
 
+// До какого времени WB запретил запросы к разделу API (после ответа 429). Хранится в базе,
+// чтобы перезапуск сайта не сбрасывал паузу и мы не продлевали блокировку лишним запросом.
+export const wbRateLimits = pgTable("wb_rate_limits", {
+  key: text("key").primaryKey(), // раздел + конец токена
+  until: timestamp("until", { withTimezone: true }).notNull(),
+});
+
 export type Cabinet = typeof cabinets.$inferSelect;

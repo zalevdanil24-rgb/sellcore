@@ -1,4 +1,5 @@
 import { syncLog } from "./sync-log";
+import { pool } from "./db";
 // Работа с API Wildberries. Каждый раздел API живёт на своём адресе и проверяется методом /ping.
 export const WB_SECTIONS = [
   { key: "content", label: "Контент", host: "content-api.wildberries.ru" },
@@ -44,8 +45,15 @@ const WAIT_429: Record<keyof typeof HOSTS, number> = { content: 5, statistics: 6
 
 // Если WB велел подождать, не трогаем этот раздел до указанного времени: каждый запрос раньше срока
 // только продлевает блокировку. Ключ — раздел + конец токена (лимиты у каждого аккаунта свои).
-const gb = globalThis as unknown as { wbBlockedUntil?: Map<string, number> };
-const blockedUntil = (gb.wbBlockedUntil ??= new Map<string, number>());
+async function blockedUntil(key: string): Promise<number> {
+  const { rows } = await pool.query("select until from wb_rate_limits where key = $1", [key]).catch(() => ({ rows: [] as { until: Date }[] }));
+  return rows[0] ? new Date(rows[0].until).getTime() : 0;
+}
+async function setBlocked(key: string, until: number) {
+  await pool.query(
+    "insert into wb_rate_limits (key, until) values ($1, $2) on conflict (key) do update set until = excluded.until",
+    [key, new Date(until)]).catch(() => null);
+}
 const blockKey = (section: string, token: string) => `${section}:${token.slice(-12)}`;
 const minutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
@@ -63,7 +71,7 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
   const mock = process.env.WB_API_MOCK;
   const url = mock ? `${mock}/${section}${path}` : `https://${HOSTS[section]}${path}`;
   const key = blockKey(section, token);
-  const until = blockedUntil.get(key) ?? 0;
+  const until = mock ? 0 : await blockedUntil(key);
   if (!mock && until > Date.now()) {
     throw new WbError(429, `WB ограничил частоту запросов — повторим через ${minutes(until - Date.now())} мин`);
   }
@@ -92,7 +100,7 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
       // Долгая блокировка — не ждём внутри загрузки, а запоминаем срок и выходим.
       if (asked > 120 || attempt >= 3) {
         const wait = Math.max(asked, WAIT_429[section]) * 1000;
-        blockedUntil.set(key, Date.now() + wait);
+        await setBlocked(key, Date.now() + wait);
         throw new WbError(429, `WB ограничил частоту запросов — повторим через ${minutes(wait)} мин`);
       }
       await sleep(mock ? 100 : (Math.max(asked, WAIT_429[section]) + 1) * 1000);
@@ -214,13 +222,14 @@ async function fetchWarehouseRemains(token: string): Promise<WbStock[]> {
   const id = task?.data?.taskId;
   if (!id) throw new WbError(null, "WB не выдал номер отчёта об остатках");
   // Отчёт строится от нескольких секунд до пары минут. Статус можно спрашивать раз в 5 секунд.
-  for (let i = 0; i < 60; i++) {
-    await sleep(process.env.WB_API_MOCK ? 50 : 6_000);
+  for (let i = 0; i < 20; i++) {
+    // Лимит WB на проверку статуса строже, чем в документации: спрашиваем раз в 30 секунд.
+    await sleep(process.env.WB_API_MOCK ? 50 : 30_000);
     const st = await wbFetch<{ data?: { status?: string } }>("analytics", `/api/v1/warehouse_remains/tasks/${id}/status`, token);
     const status = st?.data?.status;
     if (status === "done") break;
     if (status === "canceled" || status === "purged") throw new WbError(null, `отчёт об остатках: ${status}`);
-    if (i === 59) throw new WbError(null, "отчёт об остатках не успел построиться");
+    if (i === 19) throw new WbError(null, "отчёт об остатках не успел построиться");
   }
   const rows = await wbFetch<RemainsRow[]>("analytics", `/api/v1/warehouse_remains/tasks/${id}/download`, token);
   return (Array.isArray(rows) ? rows : []).map((r) => {
