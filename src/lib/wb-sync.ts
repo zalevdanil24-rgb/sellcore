@@ -47,6 +47,17 @@ async function changedSince(table: "wb_orders" | "wb_sales", cabinetId: string):
   return rows[0].d as string;
 }
 
+// Отчёты «Статистики» (заказы, продажи) WB режет строже, чем пишет в документации, и наказывает
+// долгой блокировкой всего кабинета. Поэтому обращаемся к ним не чаще раза в 30 минут — даже по кнопке.
+const STATISTICS_EVERY_MS = 30 * 60 * 1000;
+async function recentlyOk(cabinetId: string, kind: string): Promise<boolean> {
+  const last = await db.query.syncRuns.findFirst({
+    where: and(eq(schema.syncRuns.cabinetId, cabinetId), eq(schema.syncRuns.kind, kind), eq(schema.syncRuns.status, "ok")),
+    orderBy: [desc(schema.syncRuns.startedAt)],
+  });
+  return !!last && Date.now() - last.startedAt.getTime() < STATISTICS_EVERY_MS;
+}
+
 async function syncCabinet(cabinetId: string, token: string) {
   await step(cabinetId, "cards", async () => {
     const cards = dedupe(await fetchCards(token), (c) => String(c.nmID));
@@ -83,7 +94,10 @@ async function syncCabinet(cabinetId: string, token: string) {
     return `${rows.length} цен`;
   });
 
-  await step(cabinetId, "orders", async () => {
+  const skipOrders = !process.env.WB_API_MOCK && (await recentlyOk(cabinetId, "orders"));
+  const skipSales = !process.env.WB_API_MOCK && (await recentlyOk(cabinetId, "sales"));
+
+  if (!skipOrders) await step(cabinetId, "orders", async () => {
     const rows = dedupe(await fetchOrders(token, await changedSince("wb_orders", cabinetId)), (o) => o.srid).filter((o) => o.srid && day(o.date));
     for (let i = 0; i < rows.length; i += 5000) {
       await pool.query(
@@ -101,7 +115,7 @@ async function syncCabinet(cabinetId: string, token: string) {
     return `${rows.length} строк`;
   });
 
-  await step(cabinetId, "sales", async () => {
+  if (!skipSales) await step(cabinetId, "sales", async () => {
     const rows = dedupe(await fetchSales(token, await changedSince("wb_sales", cabinetId)), (s) => s.saleID).filter((s) => s.saleID && day(s.date));
     for (let i = 0; i < rows.length; i += 5000) {
       await pool.query(
