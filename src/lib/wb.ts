@@ -33,6 +33,7 @@ export async function pingAll(token: string): Promise<PingResult[]> {
 const HOSTS = {
   content: "content-api.wildberries.ru",
   statistics: "statistics-api.wildberries.ru",
+  analytics: "seller-analytics-api.wildberries.ru",
   prices: "discounts-prices-api.wildberries.ru",
   marketplace: "marketplace-api.wildberries.ru",
 } as const;
@@ -77,6 +78,8 @@ async function wbFetch<T>(section: keyof typeof HOSTS, path: string, token: stri
         `код ${res.status}${text ? `: ${text}` : ""}`;
       throw new WbError(res.status, why);
     }
+    // 204 — WB так отвечает, когда данных нет.
+    if (res.status === 204) return null as T;
     return (await res.json()) as T;
   }
 }
@@ -144,10 +147,20 @@ async function fetchChanged<T extends { lastChangeDate: string }>(kind: "orders"
 export const fetchOrders = (token: string, dateFrom: string) => fetchChanged<WbOrder>("orders", token, dateFrom);
 export const fetchSales = (token: string, dateFrom: string) => fetchChanged<WbSale>("sales", token, dateFrom);
 
-// Остатки на складах WB и товары в пути — строка на каждый склад и размер.
+// Остатки на складах WB и товары в пути — строка на каждый размер на каждом складе.
+// Старый метод /api/v1/supplier/stocks WB отключил 23.06.2026, это его замена (раздел «Аналитика»).
 export async function fetchStocks(token: string): Promise<WbStock[]> {
-  const rows = await wbFetch<WbStock[]>("statistics", "/api/v1/supplier/stocks?dateFrom=2019-06-20", token);
-  return Array.isArray(rows) ? rows : [];
+  const all: WbStock[] = [];
+  const limit = 250_000;
+  for (let offset = 0; offset < 5_000_000; offset += limit) {
+    const res = await wbFetch<{ data?: { items?: WbStock[] } } | null>(
+      "analytics", "/api/analytics/v1/stocks-report/wb-warehouses", token, { limit, offset });
+    const items = res?.data?.items ?? [];
+    all.push(...items);
+    if (items.length < limit) break;
+    await sleep(20_000); // лимит WB: 1 запрос в 20 секунд
+  }
+  return all;
 }
 
 // Остатки на складах продавца (FBS): по штрихкодам, для каждого склада продавца.
